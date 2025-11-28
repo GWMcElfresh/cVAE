@@ -410,7 +410,7 @@ class CvaeBiobert(nn.Module):
         _val_idx = _indices[:_n_val]
         
         _train_genes = _gene_tensor[_train_idx].to(self.device)
-        _train_cond = _condition_tensor[_train_idx.to(self.device)]
+        _train_cond = _condition_tensor[_train_idx]
         
         _train_dataset = TensorDataset(_train_genes, _train_cond)
         _train_loader = DataLoader(
@@ -421,7 +421,7 @@ class CvaeBiobert(nn.Module):
         
         if _n_val > 0:
             _val_genes = _gene_tensor[_val_idx].to(self.device)
-            _val_cond = _condition_tensor[_val_idx.to(self.device)]
+            _val_cond = _condition_tensor[_val_idx]
         
         # Optimizer
         _optimizer = torch.optim.Adam(
