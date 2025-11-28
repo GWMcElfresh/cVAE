@@ -1,0 +1,21 @@
+Package: cvaeBiobert
+Title: Conditional VAE with BioBERT for Seurat Objects
+Version: 0.1.0
+Authors@R: 
+    person("GWMcElfresh", email = "gwmcelfresh@example.com", role = c("aut", "cre"))
+Description: A package that integrates conditional Variational Autoencoder (cVAE) 
+    with BioBERT embeddings for dimensionality reduction of Seurat objects. 
+    The package uses BioBERT to tokenize metadata columns and sample descriptions, 
+    then conditions a gene expression VAE on these embeddings. Machine learning 
+    computations are performed in Python via reticulate.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
+Imports:
+    reticulate (>= 1.28),
+    Seurat (>= 4.0.0),
+    SeuratObject (>= 4.0.0)
+Suggests:
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
