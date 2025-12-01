@@ -5,7 +5,8 @@
 #'
 #' @param seuratObj A Seurat object with gene expression data.
 #' @param assay Name of the assay to use. Default is "RNA".
-#' @param slot Name of the slot to use. Default is "data".
+#' @param slot Name of the slot to use. Default is "scale.data" to use Seurat's
+#'   normalized and scaled data. Can also be "data" or "counts".
 #' @param metadataColumns Character vector of metadata column names to use for
 #'   conditioning. If NULL, uses all character/factor columns.
 #' @param geneList Character vector of gene names to include. If NULL, uses
@@ -24,7 +25,7 @@
 #' }
 PrepareSeuratForCvae <- function(seuratObj,
                                   assay = "RNA",
-                                  slot = "data",
+                                  slot = "scale.data",
                                   metadataColumns = NULL,
                                   geneList = NULL) {
   # Validate input
@@ -95,6 +96,7 @@ PrepareSeuratForCvae <- function(seuratObj,
     geneMatrix = geneMatrix,
     metadataTexts = metadataTexts,
     geneNames = geneList,
-    cellNames = colnames(seuratObj)
+    cellNames = colnames(seuratObj),
+    isNormalized = (slot == "scale.data")  # Flag for Python to skip normalization
   )
 }

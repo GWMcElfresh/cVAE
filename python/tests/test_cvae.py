@@ -28,6 +28,17 @@ class TestDataUtils:
         assert result.min() >= 0
         assert result.max() <= 1
     
+    def test_prepare_gene_data_already_normalized(self):
+        """Test that normalization is skipped when isNormalized=True."""
+        from cvae_biobert.utils.data_utils import PrepareGeneData
+        
+        # Simulate already normalized data (e.g., from Seurat scale.data)
+        data = np.array([[0.5, -1.2, 0.8], [-0.3, 0.9, -0.5]], dtype=np.float32)
+        result = PrepareGeneData(data, normalizeMethod="log1p", scaleToUnit=True, isNormalized=True)
+        
+        # Should return data unchanged (just converted to float32)
+        np.testing.assert_array_almost_equal(result, data)
+    
     def test_prepare_seurat_data(self):
         """Test Seurat data preparation."""
         from cvae_biobert.utils.data_utils import PrepareSeuratData
@@ -43,6 +54,23 @@ class TestDataUtils:
         assert processed.shape == genes.shape
         assert len(texts) == 5
         assert "cellType: T cell" in texts[0]
+    
+    def test_prepare_seurat_data_normalized(self):
+        """Test Seurat data preparation with pre-normalized data."""
+        from cvae_biobert.utils.data_utils import PrepareSeuratData
+        
+        # Simulate normalized data from Seurat scale.data
+        genes = np.random.randn(5, 100).astype(np.float32)
+        metadata = pd.DataFrame({
+            "cellType": ["T cell", "B cell", "Monocyte", "T cell", "NK cell"],
+            "condition": ["healthy", "disease", "healthy", "disease", "healthy"],
+        })
+        
+        processed, texts = PrepareSeuratData(genes, metadata, isNormalized=True)
+        
+        assert processed.shape == genes.shape
+        # Data should be unchanged
+        np.testing.assert_array_almost_equal(processed, genes)
     
     def test_build_metadata_text(self):
         """Test metadata text building."""

@@ -40,6 +40,7 @@ library(cvaeBiobert)
 InitPythonEnv()
 
 # Run cVAE on Seurat object
+# By default, uses Seurat's normalized layer (scale.data)
 seuratObj <- RunCvaeBiobert(
   seuratObj,
   metadataColumns = c("celltype", "condition", "sample_description"),

@@ -6,7 +6,8 @@
 #'
 #' @param seuratObj A Seurat object to process.
 #' @param assay Name of the assay to use. Default is "RNA".
-#' @param slot Slot of the assay to use. Default is "data".
+#' @param slot Slot of the assay to use. Default is "scale.data" to use Seurat's
+#'   normalized and scaled data. Can also be "data" or "counts".
 #' @param metadataColumns Character vector of metadata column names for
 #'   BioBERT conditioning. If NULL, uses all character/factor columns.
 #' @param geneList Character vector of genes to use. If NULL, uses variable
@@ -36,7 +37,7 @@
 #' }
 RunCvaeBiobert <- function(seuratObj,
                             assay = "RNA",
-                            slot = "data",
+                            slot = "scale.data",
                             metadataColumns = NULL,
                             geneList = NULL,
                             latentDim = 32L,

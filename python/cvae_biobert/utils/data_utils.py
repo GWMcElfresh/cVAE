@@ -15,34 +15,41 @@ def PrepareGeneData(
     geneMatrix: np.ndarray,
     normalizeMethod: str = "log1p",
     scaleToUnit: bool = True,
+    isNormalized: bool = False,
 ) -> np.ndarray:
     """
     Prepare gene expression data for VAE input.
     
+    Prefers to use Seurat's normalized layer (scale.data) directly when available.
+    
     Args:
-        geneMatrix: Raw gene expression matrix (samples x genes)
+        geneMatrix: Gene expression matrix (samples x genes)
         normalizeMethod: Normalization method ('log1p', 'zscore', 'none')
         scaleToUnit: Whether to scale values to [0, 1] range
+        isNormalized: If True, data is already normalized (e.g., from Seurat's scale.data)
+                     and normalization steps are skipped
         
     Returns:
         Processed gene expression matrix
     """
     _data = geneMatrix.astype(np.float32).copy()
     
-    if normalizeMethod == "log1p":
-        # Log normalize: log(1 + x)
-        _data = np.log1p(_data)
-    elif normalizeMethod == "zscore":
-        # Z-score normalize per gene
-        _mean = np.mean(_data, axis=0, keepdims=True)
-        _std = np.std(_data, axis=0, keepdims=True)
-        _std[_std == 0] = 1.0  # Avoid division by zero
-        _data = (_data - _mean) / _std
-    elif normalizeMethod != "none":
-        raise ValueError(f"Unknown normalization method: {normalizeMethod}")
+    # Skip normalization if data is already normalized (e.g., from Seurat's scale.data)
+    if not isNormalized:
+        if normalizeMethod == "log1p":
+            # Log normalize: log(1 + x)
+            _data = np.log1p(_data)
+        elif normalizeMethod == "zscore":
+            # Z-score normalize per gene
+            _mean = np.mean(_data, axis=0, keepdims=True)
+            _std = np.std(_data, axis=0, keepdims=True)
+            _std[_std == 0] = 1.0  # Avoid division by zero
+            _data = (_data - _mean) / _std
+        elif normalizeMethod != "none":
+            raise ValueError(f"Unknown normalization method: {normalizeMethod}")
     
-    if scaleToUnit:
-        # Scale to [0, 1] per gene
+    if scaleToUnit and not isNormalized:
+        # Scale to [0, 1] per gene (skip if already normalized)
         _min_val = np.min(_data, axis=0, keepdims=True)
         _max_val = np.max(_data, axis=0, keepdims=True)
         _range = _max_val - _min_val
@@ -59,12 +66,14 @@ def PrepareSeuratData(
     separator: str = " | ",
     normalizeMethod: str = "log1p",
     scaleToUnit: bool = True,
+    isNormalized: bool = False,
 ) -> Tuple[np.ndarray, List[str]]:
     """
     Prepare data from Seurat object components for cVAE-BioBERT.
     
     This function is called from R via reticulate to process Seurat
-    object data for the Python model.
+    object data for the Python model. Prefers to use Seurat's normalized
+    layer (scale.data) directly when available.
     
     Args:
         assayData: Gene expression matrix from Seurat assay (samples x genes)
@@ -74,6 +83,7 @@ def PrepareSeuratData(
         separator: Separator between metadata fields in combined text
         normalizeMethod: Gene expression normalization method
         scaleToUnit: Whether to scale gene expression to [0, 1]
+        isNormalized: If True, data is already normalized (e.g., from Seurat's scale.data)
         
     Returns:
         Tuple of (processed_gene_matrix, metadata_texts)
@@ -83,6 +93,7 @@ def PrepareSeuratData(
         assayData,
         normalizeMethod=normalizeMethod,
         scaleToUnit=scaleToUnit,
+        isNormalized=isNormalized,
     )
     
     # Determine which columns to use for text
