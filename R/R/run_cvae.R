@@ -28,6 +28,12 @@
 #'   and the trained model.
 #' @export
 #'
+#' @details
+#' By default, this function uses Seurat's normalized layer (scale.data) which
+#' is already normalized and scaled. This avoids redundant normalization and
+#' respects Seurat's preprocessing pipeline. If using a different slot like
+#' "data" or "counts", the data will be passed as-is to the Python model.
+#'
 #' @examples
 #' \dontrun{
 #' seuratObj <- RunCvaeBiobert(seuratObj,

@@ -49,7 +49,9 @@ def PrepareGeneData(
             raise ValueError(f"Unknown normalization method: {normalizeMethod}")
     
     if scaleToUnit and not isNormalized:
-        # Scale to [0, 1] per gene (skip if already normalized)
+        # Scale to [0, 1] per gene
+        # Note: Scaling is skipped when isNormalized=True because data from
+        # Seurat's scale.data is already normalized and scaled
         _min_val = np.min(_data, axis=0, keepdims=True)
         _max_val = np.max(_data, axis=0, keepdims=True)
         _range = _max_val - _min_val

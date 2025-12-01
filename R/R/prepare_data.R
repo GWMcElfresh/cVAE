@@ -17,7 +17,13 @@
 #'   \item{metadataTexts}{Character vector of combined metadata strings}
 #'   \item{geneNames}{Names of genes in the matrix}
 #'   \item{cellNames}{Names of cells/samples}
+#'   \item{isNormalized}{Logical indicating if data is already normalized (TRUE for scale.data)}
 #' @export
+#'
+#' @details
+#' When using slot = "scale.data" (default), the data is already normalized and
+#' scaled by Seurat, so no additional normalization is applied by the Python model.
+#' This avoids redundant normalization and preserves Seurat's preprocessing.
 #'
 #' @examples
 #' \dontrun{
