@@ -1,4 +1,4 @@
 library(testthat)
-library(cvaeBiobert)
+library(cvaeBiobart)
 
-test_check("cvaeBiobert")
+test_check("cvaeBiobart")

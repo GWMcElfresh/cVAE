@@ -1,0 +1,290 @@
+---
+title: "cVAE-BioBART Demo with UV and System2"
+author: "Antigravity"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This RMarkdown demonstrates the workflow of **cVAE-BioBART** using a robust **UV-based** process isolation approach. Instead of using `reticulate` inside the R process, we export data to CSVs, run a dedicated Python process managed by `uv`, and import the results.
+
+## 1. Local Package Loading
+
+```{r libraries, message=FALSE, warning=FALSE}
+# Install pacman if not already installed
+if (!require("pacman")) install.packages("pacman")
+
+# Use pacman to load/install standard dependencies
+pacman::p_load(Seurat, ggplot2, patchwork, readr, SeuratData)
+```
+
+## 2. Prepare Data
+
+We load `pbmc_small` and prepare the count matrix and metadata for the external Python process.
+
+```{r prepare_data}
+# Load example data
+data("pbmc_small")
+# InstallData("pbmc3k")
+data("pbmc3k")
+seuratObj <- pbmc3k
+seuratObj <- UpdateSeuratObject(seuratObj)
+# Ensure we have the celltype column
+seuratObj$celltype <- as.character(seuratObj$seurat_annotations)
+# process seurat object
+seuratObj <- NormalizeData(seuratObj)
+seuratObj <- FindVariableFeatures(seuratObj, selection.method = "vst", nfeatures = 2000)
+seuratObj <- ScaleData(seuratObj, features = VariableFeatures(seuratObj))
+seuratObj <- RunPCA(seuratObj, features = VariableFeatures(seuratObj))
+seuratObj <- FindNeighbors(seuratObj, reduction = "pca", dims = 1:10)
+seuratObj <- FindClusters(seuratObj, resolution = 0.5)
+seuratObj$rna_clusters <- seuratObj$seurat_clusters
+seuratObj <- RunUMAP(seuratObj, reduction = "pca", dims = 1:10, reduction.name = "umap_rna", reduction.key = "rnaUMAP_")
+
+# Create a temporary directory for data exchange
+temp_dir <- "cvae_temp"
+if (!dir.exists(temp_dir)) dir.create(temp_dir)
+
+# 1. Export Gene Expression Matrix (Cells x Genes)
+# Use scale.data if available, otherwise data/counts
+# Transpose so rows = cells, cols = genes (standard for ML)
+gene_matrix <- t(as.matrix(GetAssayData(seuratObj, slot = "scale.data")))
+write.csv(gene_matrix, file.path(temp_dir, "gene_matrix.csv"), row.names = FALSE)
+
+# 2. Export Metadata (just the text column for conditioning)
+# We strictly need the order to match the gene matrix rows
+metadata_text <- seuratObj$celltype
+writeLines(metadata_text, file.path(temp_dir, "metadata.txt"))
+
+message("Data exported to ", temp_dir)
+```
+
+## 3. Python Driver Script
+
+We create a Python script that uses the `cvae-biobart` package to process the data.
+
+```{r create_python_script}
+python_script <- '
+import sys
+import os
+# Import cvae_biobart (and thus torch) BEFORE numpy/pandas to avoid DLL conflicts on Windows
+# (e.g. Intel OpenMP / shm.dll issues)
+from cvae_biobart import CvaeBiobert
+import numpy as np
+import pandas as pd
+
+# Paths
+data_dir = "cvae_temp"
+gene_file = os.path.join(data_dir, "gene_matrix.csv")
+meta_file = os.path.join(data_dir, "metadata.txt")
+out_file = os.path.join(data_dir, "embeddings.csv")
+
+print(f"Loading data from {data_dir}...")
+
+# Load Gene Matrix
+# Skip header if present, assuming pandas read_csv handles it
+df_genes = pd.read_csv(gene_file)
+gene_matrix = df_genes.values.astype(np.float32)
+n_samples, n_genes = gene_matrix.shape
+print(f"Gene matrix shape: {n_samples} samples, {n_genes} genes")
+
+# Load Metadata
+with open(meta_file, "r") as f:
+    metadata_texts = [line.strip() for line in f.readlines()]
+
+if len(metadata_texts) != n_samples:
+    raise ValueError(f"Metadata length ({len(metadata_texts)}) does not match samples ({n_samples})")
+
+# Initialize Model
+print("Initializing cVAE-BioBART...")
+model = CvaeBiobert(
+    geneCount=n_genes,
+    latentDim=16,
+    biobartModel="GanjinZero/biobart-base",  # Use BioBART
+    device="cpu"  # Force CPU for demo stability
+)
+
+# Train and Transform
+print("Training model...")
+embeddings = model.FitTransform(
+    geneMatrix=gene_matrix,
+    metadataTexts=metadata_texts,
+    epochs=50,
+    batchSize=32,
+    learningRate=0.001
+)
+
+# Extract BioBART embeddings
+print("Extracting BioBART embeddings...")
+embeddings_bert = model.EncodeCondition(metadata_texts)
+bert_out_file = os.path.join(data_dir, "bert_embeddings.csv")
+print(f"Saving BioBART embeddings to {bert_out_file}...")
+np.savetxt(bert_out_file, embeddings_bert.cpu().numpy(), delimiter=",")
+
+# Save Embeddings
+print(f"Saving embeddings to {out_file}...")
+np.savetxt(out_file, embeddings, delimiter=",")
+print("Done.")
+'
+
+writeLines(python_script, file.path(temp_dir, "driver.py"))
+```
+
+
+
+## 4. Execute via UV
+
+We use `system2` to manage a persistent UV virtual environment. This ensures all dependencies (including `pandas`, `numpy`, `torch`, `transformers`) are correctly installed and isolated.
+
+```{r run_python}
+# Define the python package directory to install from
+repo_root <- getwd()
+python_pkg_dir <- file.path(repo_root, "python")
+python_venv <- file.path(repo_root, ".venv")
+
+# 1. Create Venv if it doesn\'t exist
+if (!dir.exists(python_venv)) {
+    message("Creating UV virtual environment...")
+    system2("uv", args = c("venv", ".venv"))
+}
+
+# 2. Install Dependencies
+# We install pandas, numpy<2, protobuf (for transformers), and the local package
+message("Installing dependencies...")
+pip_args <- c(
+    "pip", "install",
+    "--python", python_venv,
+    "pandas",
+    "numpy<2",
+    "protobuf",
+    "torch",
+    "transformers",
+    python_pkg_dir
+)
+system2("uv", args = pip_args)
+
+# 3. Determine Python Executable Path
+if (.Platform$OS.type == "windows") {
+    python_exe <- file.path(python_venv, "Scripts", "python.exe")
+} else {
+    python_exe <- file.path(python_venv, "bin", "python")
+}
+
+message("Running Python script...")
+args <- c(file.path(temp_dir, "driver.py"))
+exit_code <- system2(python_exe, args = args, stdout = TRUE, stderr = TRUE)
+
+# Print output
+cat(paste(exit_code, collapse = "\n"))
+
+if (!is.null(attr(exit_code, "status")) && attr(exit_code, "status") != 0) {
+    stop("Python execution failed!")
+}
+```
+
+## 5. Import and Visualize Results
+
+We load the embeddings back into R and add them to the Seurat object.
+
+```{r import_results}
+# Load embeddings
+embeddings_file <- file.path(temp_dir, "embeddings.csv")
+if (!file.exists(embeddings_file)) stop("Embeddings file not found!")
+
+embeddings <- as.matrix(read.csv(embeddings_file, header = FALSE))
+rownames(embeddings) <- colnames(seuratObj)
+colnames(embeddings) <- paste0("cvae_", 1:ncol(embeddings))
+
+# Create DimReducObject
+seuratObj[["cvae"]] <- CreateDimReducObject(
+    embeddings = embeddings,
+    key = "cvae_",
+    assay = DefaultAssay(seuratObj)
+)
+
+# Plot basic cVAE embedding dimensions
+p1 <- DimPlot(seuratObj, reduction = "cvae", group.by = "celltype") +
+    ggtitle("cVAE Latent Space")
+
+print(p1)
+```
+
+```{r compare_umaps, fig.width=16, fig.height=12}
+# 1. Standard RNA UMAP
+p_rna_umap <- DimPlot(seuratObj, reduction = "umap_rna", group.by = "celltype", label = TRUE) +
+    ggtitle("Standard RNA UMAP")
+
+# 2. cVAE UMAP & Clustering
+seuratObj <- FindNeighbors(seuratObj, reduction = "cvae", dims = 1:10)
+seuratObj <- FindClusters(seuratObj, resolution = 0.5)
+seuratObj$cvae_clusters <- seuratObj$seurat_clusters
+seuratObj <- RunUMAP(seuratObj, reduction = "cvae", dims = 1:10, reduction.key = "cvaeUMAP_")
+
+p_cvae_umap <- DimPlot(seuratObj, reduction = "umap", group.by = "celltype", label = TRUE) +
+    ggtitle("cVAE Latent UMAP")
+
+# 3. BERT UMAP & Clustering
+bert_file <- file.path(temp_dir, "bert_embeddings.csv")
+if (file.exists(bert_file)) {
+    bert_embeddings <- as.matrix(read.csv(bert_file, header = FALSE))
+    rownames(bert_embeddings) <- colnames(seuratObj)
+    colnames(bert_embeddings) <- paste0("bert_", 1:ncol(bert_embeddings))
+
+    # Store in Seurat
+    seuratObj[["bert"]] <- CreateDimReducObject(
+        embeddings = bert_embeddings,
+        key = "bert_",
+        assay = DefaultAssay(seuratObj)
+    )
+
+    # Run Clustering on BERT
+    seuratObj <- FindNeighbors(seuratObj, reduction = "bert", dims = seq_len(ncol(bert_embeddings)))
+    seuratObj <- FindClusters(seuratObj, resolution = 0.5)
+    seuratObj$bert_clusters <- seuratObj$seurat_clusters
+
+    # Run UMAP on BERT
+    seuratObj <- RunUMAP(seuratObj, reduction = "bert", dims = seq_len(ncol(bert_embeddings)), reduction.name = "umap_bert", reduction.key = "bertUMAP_")
+
+    p_bert_umap <- DimPlot(seuratObj, reduction = "umap_bert", group.by = "celltype", label = TRUE) +
+        ggtitle("BERT Embeddings UMAP")
+
+    # --- Visualization 1: Side-by-Side UMAPs ---
+    p_umaps <- p_rna_umap + p_cvae_umap + p_bert_umap
+
+    # --- Visualization 2: Clustering Agreement Heatmaps ---
+    # Helper to plot confusion matrix
+    plot_agreement <- function(obj, group1, group2, title_text) {
+        tbl <- table(obj[[group1]][, 1], obj[[group2]][, 1])
+        df_tbl <- as.data.frame(tbl)
+        colnames(df_tbl) <- c("G1", "G2", "Count")
+
+        ggplot(df_tbl, aes(x = G1, y = G2, fill = Count)) +
+            geom_tile() +
+            scale_fill_gradient(low = "white", high = "red") +
+            labs(x = group1, y = group2, title = title_text) +
+            theme_minimal() +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    }
+
+    p_heat1 <- plot_agreement(seuratObj, "rna_clusters", "cvae_clusters", "RNA vs cVAE Clusters")
+    p_heat2 <- plot_agreement(seuratObj, "rna_clusters", "bert_clusters", "RNA vs BERT Clusters")
+    p_heat3 <- plot_agreement(seuratObj, "cvae_clusters", "bert_clusters", "cVAE vs BERT Clusters")
+
+    p_heats <- p_heat1 + p_heat2 + p_heat3
+
+    # Combine all
+    p_umaps / p_heats
+} else {
+    warning("BERT embeddings file not found.")
+    p_rna_umap + p_cvae_umap
+}
+```
+
+## Conclusion
+
+We successfully successfully separated the R and Python processes using `uv` and file-based data exchange. This avoids complex ABI issues between R's embedded Python and the system environment.

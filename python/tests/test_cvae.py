@@ -10,7 +10,7 @@ class TestDataUtils:
     
     def test_prepare_gene_data_log1p(self):
         """Test log1p normalization."""
-        from cvae_biobert.utils.data_utils import PrepareGeneData
+        from cvae_biobart.utils.data_utils import PrepareGeneData
         
         data = np.array([[0, 1, 10], [5, 2, 0]], dtype=np.float32)
         result = PrepareGeneData(data, normalizeMethod="log1p", scaleToUnit=False)
@@ -20,7 +20,7 @@ class TestDataUtils:
     
     def test_prepare_gene_data_scale(self):
         """Test scaling to unit range."""
-        from cvae_biobert.utils.data_utils import PrepareGeneData
+        from cvae_biobart.utils.data_utils import PrepareGeneData
         
         data = np.array([[0, 10], [5, 5], [10, 0]], dtype=np.float32)
         result = PrepareGeneData(data, normalizeMethod="none", scaleToUnit=True)
@@ -30,7 +30,7 @@ class TestDataUtils:
     
     def test_prepare_gene_data_already_normalized(self):
         """Test that normalization is skipped when isNormalized=True."""
-        from cvae_biobert.utils.data_utils import PrepareGeneData
+        from cvae_biobart.utils.data_utils import PrepareGeneData
         
         # Simulate already normalized data (e.g., from Seurat scale.data)
         data = np.array([[0.5, -1.2, 0.8], [-0.3, 0.9, -0.5]], dtype=np.float32)
@@ -41,7 +41,7 @@ class TestDataUtils:
     
     def test_prepare_seurat_data(self):
         """Test Seurat data preparation."""
-        from cvae_biobert.utils.data_utils import PrepareSeuratData
+        from cvae_biobart.utils.data_utils import PrepareSeuratData
         
         genes = np.random.rand(5, 100).astype(np.float32)
         metadata = pd.DataFrame({
@@ -57,7 +57,7 @@ class TestDataUtils:
     
     def test_prepare_seurat_data_normalized(self):
         """Test Seurat data preparation with pre-normalized data."""
-        from cvae_biobert.utils.data_utils import PrepareSeuratData
+        from cvae_biobart.utils.data_utils import PrepareSeuratData
         
         # Simulate normalized data from Seurat scale.data
         genes = np.random.randn(5, 100).astype(np.float32)
@@ -74,7 +74,7 @@ class TestDataUtils:
     
     def test_build_metadata_text(self):
         """Test metadata text building."""
-        from cvae_biobert.utils.data_utils import BuildMetadataText
+        from cvae_biobart.utils.data_utils import BuildMetadataText
         
         metadata = pd.DataFrame({
             "sample": ["S1", "S2"],
@@ -93,7 +93,7 @@ class TestBiobertEncoder:
     def test_combine_metadata(self):
         """Test metadata combination function."""
         # This test doesn't require loading the full model
-        from cvae_biobert.models.biobert_encoder import BiobertEncoder
+        from cvae_biobart.models.biobert_encoder import BiobertEncoder
         
         # We can test the method without initializing the encoder
         # by creating a partial mock
@@ -121,7 +121,7 @@ class TestCvaeBiobert:
     
     def test_encoder_decoder_symmetry(self):
         """Test that encoder and decoder have symmetric structure."""
-        from cvae_biobert.models.cvae import Encoder, Decoder
+        from cvae_biobart.models.cvae import Encoder, Decoder
         import torch
         
         input_dim = 100
@@ -147,7 +147,7 @@ class TestCvaeBiobert:
     
     def test_encoder_output_shapes(self):
         """Test encoder output shapes."""
-        from cvae_biobert.models.cvae import Encoder
+        from cvae_biobart.models.cvae import Encoder
         import torch
         
         encoder = Encoder(
@@ -167,7 +167,7 @@ class TestCvaeBiobert:
     
     def test_decoder_output_shape(self):
         """Test decoder output shape."""
-        from cvae_biobert.models.cvae import Decoder
+        from cvae_biobart.models.cvae import Decoder
         import torch
         
         decoder = Decoder(
@@ -190,7 +190,7 @@ class TestFormatResults:
     
     def test_format_results_basic(self):
         """Test basic result formatting."""
-        from cvae_biobert.utils.data_utils import FormatResults
+        from cvae_biobart.utils.data_utils import FormatResults
         
         embeddings = np.random.rand(10, 32)
         result = FormatResults(embeddings)
@@ -201,7 +201,7 @@ class TestFormatResults:
     
     def test_format_results_with_reconstruction(self):
         """Test result formatting with reconstruction."""
-        from cvae_biobert.utils.data_utils import FormatResults
+        from cvae_biobart.utils.data_utils import FormatResults
         
         embeddings = np.random.rand(10, 32)
         reconstructed = np.random.rand(10, 100)
@@ -210,3 +210,4 @@ class TestFormatResults:
         
         assert "reconstructed" in result
         np.testing.assert_array_equal(result["reconstructed"], reconstructed)
+

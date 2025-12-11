@@ -1,0 +1,262 @@
+---
+title: "cVAE-BioBART Prediction Demo"
+author: "Antigravity"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This demo showcases the **prediction** and **generation** capabilities of the cVAE-BioBART model.
+1. **Gene -> BioBART**: Predicting the cell type (condition) from gene expression, then decoding to text.
+2. **BioBART -> Gene**: Generating synthetic gene expression profiles from text descriptions.
+
+## 1. Local Package Loading
+
+```{r libraries, message=FALSE, warning=FALSE}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(Seurat, ggplot2, patchwork, readr, SeuratData, gridExtra)
+```
+
+## 2. Prepare Data
+
+We use `pbmc3k` data for training.
+
+```{r prepare_data}
+# Load example data
+# InstallData("pbmc3k")
+data("pbmc3k")
+seuratObj <- pbmc3k
+seuratObj <- UpdateSeuratObject(seuratObj)
+seuratObj$celltype <- as.character(seuratObj$seurat_annotations)
+
+# Preprocessing
+seuratObj <- NormalizeData(seuratObj)
+seuratObj <- FindVariableFeatures(seuratObj, selection.method = "vst", nfeatures = 2000)
+seuratObj <- ScaleData(seuratObj, features = VariableFeatures(seuratObj))
+
+# Create temp directory
+temp_dir <- "cvae_pred_temp"
+if (!dir.exists(temp_dir)) dir.create(temp_dir)
+
+# Export Data
+gene_matrix <- t(as.matrix(GetAssayData(seuratObj, slot = "scale.data")))
+write.csv(gene_matrix, file.path(temp_dir, "gene_matrix.csv"), row.names = FALSE)
+
+metadata_text <- seuratObj$celltype
+writeLines(metadata_text, file.path(temp_dir, "metadata.txt"))
+
+message("Data exported to ", temp_dir)
+```
+
+## 3. Python Driver Script
+
+This script trains the model and then performs the prediction tasks.
+
+```{r create_python_script}
+python_script <- '
+import sys
+import os
+import torch
+import numpy as np
+import pandas as pd
+from cvae_biobart import CvaeBiobart
+
+# Paths
+data_dir = "cvae_pred_temp"
+gene_file = os.path.join(data_dir, "gene_matrix.csv")
+meta_file = os.path.join(data_dir, "metadata.txt")
+
+# Load Data
+print("Loading data...")
+df_genes = pd.read_csv(gene_file)
+gene_matrix = df_genes.values.astype(np.float32)
+n_samples, n_genes = gene_matrix.shape
+
+with open(meta_file, "r") as f:
+    metadata_texts = [line.strip() for line in f.readlines()]
+
+# Initialize Model
+print("Initializing cVAE-BioBART...")
+model = CvaeBiobert(
+    geneCount=n_genes,
+    latentDim=16,
+    conditionDim=768,
+    biobartModel="GanjinZero/biobart-base",  # Use BioBART
+    device="cpu"  # Force CPU for demo
+)
+
+# Train
+print("Training model...")
+model.Fit(
+    geneMatrix=gene_matrix,
+    metadataTexts=metadata_texts,
+    epochs=20, # Short training for demo
+    batchSize=32,
+    learningRate=0.001
+)
+
+# --- Task 1: Gene -> BioBART Prediction + Text Decoding ---
+print("Running prediction (Gene -> BioBART embedding)...")
+# Predict embeddings for all cells
+pred_embeddings = model.PredictCondition(gene_matrix)
+np.savetxt(os.path.join(data_dir, "pred_embeddings.csv"), pred_embeddings, delimiter=",")
+
+# Decode predicted embeddings to text using BioBART decoder
+print("Decoding embeddings to text...")
+# Decode a subset (first 50) to save time
+pred_texts = model.DecodeToText(pred_embeddings[:50], maxNewTokens=30)
+with open(os.path.join(data_dir, "pred_texts.txt"), "w") as f:
+    for t in pred_texts:
+        f.write(t + "\\n")
+
+# Also save the "True" embeddings (Condition) for comparison
+true_embeddings = model.EncodeCondition(metadata_texts).cpu().numpy()
+np.savetxt(os.path.join(data_dir, "true_embeddings.csv"), true_embeddings, delimiter=",")
+
+# Save unique labels for reference
+unique_labels = sorted(list(set(metadata_texts)))
+with open(os.path.join(data_dir, "unique_labels.txt"), "w") as f:
+    for l in unique_labels:
+        f.write(l + "\\n")
+
+# --- Task 2: BioBART -> Gene Generation ---
+print("Running generation (BioBART -> Gene)...")
+# Generate cells for specific types
+target_types = ["B cell", "NK cell", "CD14+ Monocyte", "Platelet"]
+# Generate 50 cells per type
+gen_texts = []
+for t in target_types:
+    gen_texts.extend([t] * 50)
+
+generated_genes = model.Generate(gen_texts)
+np.savetxt(os.path.join(data_dir, "generated_genes.csv"), generated_genes, delimiter=",")
+with open(os.path.join(data_dir, "generated_labels.txt"), "w") as f:
+    for l in gen_texts:
+        f.write(l + "\\n")
+
+print("Done.")
+'
+
+writeLines(python_script, file.path(temp_dir, "driver.py"))
+```
+
+## 4. Execute via UV
+
+```{r run_python}
+# Define the python package directory to install from
+repo_root <- getwd()
+python_pkg_dir <- file.path(repo_root, "python")
+python_venv <- file.path(repo_root, ".venv")
+
+# 1. Create Venv if it doesn't exist
+if (!dir.exists(python_venv)) {
+    message("Creating UV virtual environment...")
+    system2("uv", args = c("venv", ".venv"))
+}
+
+# 2. Install Dependencies
+# We install pandas, numpy<2, protobuf (for transformers), and the local package
+message("Installing dependencies...")
+pip_args <- c(
+    "pip", "install",
+    "--python", python_venv,
+    "pandas",
+    "numpy<2",
+    "protobuf",
+    "torch",
+    "transformers",
+    python_pkg_dir
+)
+system2("uv", args = pip_args)
+
+# 3. Determine Python Executable Path
+if (.Platform$OS.type == "windows") {
+    python_exe <- file.path(python_venv, "Scripts", "python.exe")
+} else {
+    python_exe <- file.path(python_venv, "bin", "python")
+}
+
+message("Running Python script...")
+args <- c(file.path(temp_dir, "driver.py"))
+exit_code <- system2(python_exe, args = args, stdout = TRUE, stderr = TRUE)
+
+# Print output
+cat(paste(exit_code, collapse = "\n"))
+
+if (!is.null(attr(exit_code, "status")) && attr(exit_code, "status") != 0) {
+    stop("Python execution failed!")
+}
+```
+
+## 5. Analyze: Gene -> BioBART Text Decoding
+
+We display the text generated by BioBART's decoder from predicted embeddings.
+
+```{r analyze_prediction}
+# Load decoded texts and true labels
+pred_texts <- readLines(file.path(temp_dir, "pred_texts.txt"))
+true_labels <- seuratObj$celltype[1:50] # First 50 cells (matching decoded subset)
+
+# Display comparison
+df_comparison <- data.frame(
+    True_CellType = true_labels,
+    Predicted_Text = pred_texts
+)
+
+# Show first 20 examples
+knitr::kable(head(df_comparison, 20), caption = "Gene Expression -> Text Decoding")
+
+message("Decoded ", length(pred_texts), " cells")
+```
+
+## 6. Analyze: BioBART -> Gene Generation
+
+We project the generated cells onto the existing reference UMAP to see if they cluster correctly.
+
+```{r analyze_generation}
+# Load generated data
+gen_genes <- read.csv(file.path(temp_dir, "generated_genes.csv"), header = FALSE)
+gen_labels <- readLines(file.path(temp_dir, "generated_labels.txt"))
+colnames(gen_genes) <- rownames(seuratObj) # Variable features only
+rownames(gen_genes) <- paste0("Gen_", 1:nrow(gen_genes))
+
+# Create a new Seurat object for generated data
+gen_obj <- CreateSeuratObject(counts = t(gen_genes), project = "Generated")
+gen_obj$celltype <- gen_labels
+# Data is already scaled/normalized (output of decoder), so we put it in scale.data
+# But Seurat expects counts for standard workflow.
+# For visualization mapping, we can try to anchor transfer or just simple PCA projection if features match.
+
+# Let's merge and re-process for visualization
+seuratObj$type <- "Original"
+gen_obj$type <- "Generated"
+
+# We need to populate data slot for gen_obj because Merge checks it (or just counts)
+# Since gen_genes is roughly scale.data, we might need to "unscale" or just treat as data.
+# For simplicity in this demo, we'll treat it as 'data' (log-normalized)
+gen_obj <- SetAssayData(gen_obj, slot = "data", new.data = t(gen_genes))
+# Also set scale.data
+gen_obj <- SetAssayData(gen_obj, slot = "scale.data", new.data = t(gen_genes))
+# We need VariableFeatures to be set
+VariableFeatures(gen_obj) <- VariableFeatures(seuratObj)
+
+# Merge
+merged <- merge(seuratObj, y = gen_obj)
+VariableFeatures(merged) <- VariableFeatures(seuratObj)
+merged <- ScaleData(merged, features = VariableFeatures(merged), do.scale = FALSE, do.center = FALSE) # Already scaled roughly
+
+# Run PCA
+merged <- RunPCA(merged, features = VariableFeatures(merged), verbose = FALSE)
+merged <- RunUMAP(merged, dims = 1:30, verbose = FALSE)
+
+# Plot
+p1 <- DimPlot(merged, group.by = "type") + ggtitle("Original vs Generated")
+p2 <- DimPlot(merged, group.by = "celltype", split.by = "type") + ggtitle("Cell Types")
+
+p1 / p2
+```

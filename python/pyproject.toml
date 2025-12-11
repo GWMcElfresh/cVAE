@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cvae-biobert"
-version = "0.1.0"
-description = "Conditional VAE with BioBERT embeddings for gene expression analysis"
+name = "cvae-biobart"
+version = "0.2.0"
+description = "Conditional VAE with BioBART embeddings for gene expression analysis with text generation"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"

@@ -1,7 +1,7 @@
 #' Prepare Seurat Object for cVAE
 #'
 #' Extracts gene expression data and metadata from a Seurat object
-#' for use with the cVAE-BioBERT model.
+#' for use with the cVAE-BioBART model.
 #'
 #' @param seuratObj A Seurat object with gene expression data.
 #' @param assay Name of the assay to use. Default is "RNA".

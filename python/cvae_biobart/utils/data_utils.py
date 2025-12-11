@@ -2,7 +2,7 @@
 Data utilities for preparing gene expression data and Seurat objects.
 
 This module provides functions for preparing data from Seurat objects
-for use with the cVAE-BioBERT model.
+for use with the cVAE-BioBART model.
 """
 
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -71,7 +71,7 @@ def PrepareSeuratData(
     isNormalized: bool = False,
 ) -> Tuple[np.ndarray, List[str]]:
     """
-    Prepare data from Seurat object components for cVAE-BioBERT.
+    Prepare data from Seurat object components for cVAE-BioBART.
     
     This function is called from R via reticulate to process Seurat
     object data for the Python model. Prefers to use Seurat's normalized
@@ -186,3 +186,4 @@ def FormatResults(
         results["history"] = trainingHistory
     
     return results
+

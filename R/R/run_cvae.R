@@ -1,6 +1,6 @@
-#' Run cVAE-BioBERT on Seurat Object
+#' Run cVAE-BioBART on Seurat Object
 #'
-#' Runs the conditional VAE with BioBERT conditioning on a Seurat object.
+#' Runs the conditional VAE with BioBART conditioning on a Seurat object.
 #' This function extracts gene expression and metadata, trains (or uses
 #' a pre-trained) cVAE model, and adds the results back to the Seurat object.
 #'
@@ -9,7 +9,7 @@
 #' @param slot Slot of the assay to use. Default is "scale.data" to use Seurat's
 #'   normalized and scaled data. Can also be "data" or "counts".
 #' @param metadataColumns Character vector of metadata column names for
-#'   BioBERT conditioning. If NULL, uses all character/factor columns.
+#'   BioBART conditioning. If NULL, uses all character/factor columns.
 #' @param geneList Character vector of genes to use. If NULL, uses variable
 #'   features or all genes.
 #' @param latentDim Dimension of the VAE latent space. Default is 32.
@@ -153,7 +153,7 @@ RunCvaeBiobert <- function(seuratObj,
 #' }
 GetCvaeEmbeddings <- function(seuratObj, reductionName = "cvae") {
   if (!reductionName %in% names(seuratObj@reductions)) {
-    stop(paste("Reduction", reductionName, "not found. Run RunCvaeBiobert first."))
+    stop(paste("Reduction", reductionName, "not found. Run RunCvaeBiobart first."))
   }
 
   return(Seurat::Embeddings(seuratObj, reduction = reductionName))
@@ -162,7 +162,7 @@ GetCvaeEmbeddings <- function(seuratObj, reductionName = "cvae") {
 #' Get cVAE Training Metadata
 #'
 #' Retrieves training metadata from a Seurat object that has been
-#' processed with RunCvaeBiobert.
+#' processed with RunCvaeBiobart.
 #'
 #' @param seuratObj A Seurat object with cVAE reduction.
 #' @param reductionName Name of the cVAE reduction. Default is "cvae".
@@ -177,7 +177,7 @@ GetCvaeEmbeddings <- function(seuratObj, reductionName = "cvae") {
 GetCvaeMetadata <- function(seuratObj, reductionName = "cvae") {
   metaKey <- paste0(reductionName, "_training")
   if (!metaKey %in% names(seuratObj@misc)) {
-    stop(paste("cVAE training metadata not found. Run RunCvaeBiobert first."))
+    stop(paste("cVAE training metadata not found. Run RunCvaeBiobart first."))
   }
 
   return(seuratObj@misc[[metaKey]])

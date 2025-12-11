@@ -1,1 +1,2 @@
-"""Tests package for cvae_biobert."""
+"""Tests package for cvae_biobart."""
+
